@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   error TEXT,
   commented INTEGER DEFAULT 0,
   started_at REAL,
-  finished_at REAL
+  finished_at REAL,
+  acus_consumed REAL
 );
 """
 
@@ -39,6 +40,9 @@ def _connect() -> sqlite3.Connection:
 
 _conn = _connect()
 _conn.executescript(SCHEMA)
+_columns = {row[1] for row in _conn.execute("PRAGMA table_info(tasks)")}
+if "acus_consumed" not in _columns:
+    _conn.execute("ALTER TABLE tasks ADD COLUMN acus_consumed REAL")
 _conn.commit()
 
 

@@ -7,6 +7,9 @@ def _bool(name: str, default: str = "false") -> bool:
 
 DEVIN_API_KEY = os.getenv("DEVIN_API_KEY", "")
 DEVIN_API_BASE = os.getenv("DEVIN_API_BASE", "https://api.devin.ai")
+DEVIN_ORG_ID = os.getenv("DEVIN_ORG_ID", "")
+DEVIN_MAX_ACU = int(os.getenv("DEVIN_MAX_ACU", "5"))
+DEVIN_DRY_RUN_SECONDS = float(os.getenv("DEVIN_DRY_RUN_SECONDS", "2"))
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_API_BASE = os.getenv("GITHUB_API_BASE", "https://api.github.com")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "amrupapz/superset")
