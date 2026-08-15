@@ -56,6 +56,21 @@ Requirements:
   not_applicable) with the reason instead.
 """
 
+DRY_RUN_ARTIFACTS = {
+    "1": {
+        "session_url": "https://app.devin.ai/sessions/d6e49f1b5aba47cd916d5cdafca769ed",
+        "pr_url": "https://github.com/amrupapz/superset/pull/3",
+        "verification": "Frontend pre-commit checks passed; focused Jest suite passed 6/6 tests.",
+        "risk_notes": "Deletion only; confirm no downstream plugin imports the POC module.",
+    },
+    "2": {
+        "session_url": "https://app.devin.ai/sessions/e3177eecf75c4fac8f39d0e3459ab4a9",
+        "pr_url": "https://github.com/amrupapz/superset/pull/4",
+        "verification": "Focused useIsMobile Jest suite passed 5/5 tests; lint and type checks passed.",
+        "risk_notes": "Test-only change; review the MediaQueryList double and breakpoint assertion.",
+    },
+}
+
 
 class DevinClient:
     """Minimal client for the two Devin API calls the orchestrator needs."""
@@ -100,13 +115,26 @@ class DevinClient:
         if self.dry_run:
             session_id = f"devin-dryrun-{uuid.uuid4().hex[:12]}"
             issue_tag = next((tag for tag in tags if tag.startswith("issue-")), "issue-1")
+            issue_number = issue_tag.removeprefix("issue-")
+            artifact = DRY_RUN_ARTIFACTS.get(issue_number, {})
             self._fake[session_id] = {
                 "created": time.time(),
-                "pr_number": issue_tag.removeprefix("issue-"),
+                "issue_number": issue_number,
+                "pr_url": artifact.get(
+                    "pr_url", f"https://github.com/{repo}/pull/{issue_number}"
+                ),
+                "verification": artifact.get(
+                    "verification", "Focused formatting, lint, type, and test checks passed."
+                ),
+                "risk_notes": artifact.get(
+                    "risk_notes", "Review the generated change before merging."
+                ),
             }
             return {
                 "session_id": session_id,
-                "url": f"https://app.devin.ai/sessions/{session_id}",
+                "url": artifact.get(
+                    "session_url", f"https://app.devin.ai/sessions/{session_id}"
+                ),
             }
         response = self.http.post(
             f"{self.api_base}/v3/organizations/{self.org_id}/sessions",
@@ -138,7 +166,16 @@ class DevinClient:
 
     def _fake_progress(self, session_id: str) -> dict:
         """Canned lifecycle so the whole pipeline is runnable without credentials."""
-        fake = self._fake.setdefault(session_id, {"created": time.time(), "pr_number": "1"})
+        fake = self._fake.setdefault(
+            session_id,
+            {
+                "created": time.time(),
+                "issue_number": "1",
+                "pr_url": "https://github.com/amrupapz/superset/pull/3",
+                "verification": DRY_RUN_ARTIFACTS["1"]["verification"],
+                "risk_notes": DRY_RUN_ARTIFACTS["1"]["risk_notes"],
+            },
+        )
         started = fake["created"]
         elapsed = time.time() - started
         if elapsed < self.dry_run_seconds:
@@ -147,13 +184,13 @@ class DevinClient:
             "session_id": session_id,
             "status": "running",
             "status_detail": "finished",
-            "pull_requests": [{"pr_state": "open", "pr_url": f"https://github.com/example/superset/pull/{fake['pr_number']}"}],
+            "pull_requests": [{"pr_state": "open", "pr_url": fake["pr_url"]}],
             "acus_consumed": 1.25,
             "structured_output": {
                 "status": "fixed",
-                "pr_url": f"https://github.com/example/superset/pull/{fake['pr_number']}",
-                "verification": "npx prettier --check <files>; npx tsc --noEmit; jest <suite> -> all passed",
-                "risk_notes": "Deletion only; confirm no downstream plugin imports the module.",
+                "pr_url": fake["pr_url"],
+                "verification": fake["verification"],
+                "risk_notes": fake["risk_notes"],
             },
         }
 
