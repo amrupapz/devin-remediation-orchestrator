@@ -49,6 +49,8 @@ docker compose up --build
 Open http://localhost:8000/dashboard. In dry-run the Devin and GitHub calls are
 replaced with canned responses that walk through the real state machine, so the
 poller, the store, the metrics and the dashboard are all genuinely exercised.
+The two seeded Superset rows link to the recorded live Devin sessions and PRs;
+the dashboard labels these as evidence rather than newly created dry-run resources.
 
 ## Live run
 

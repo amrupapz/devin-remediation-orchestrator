@@ -70,7 +70,8 @@ def test_dry_run_end_to_end_is_idempotent_and_observable():
 
     task = task_store.get(1)
     assert task["status"] == DONE
-    assert task["pr_url"].endswith("/pull/1")
+    assert task["session_url"].endswith("d6e49f1b5aba47cd916d5cdafca769ed")
+    assert task["pr_url"] == "https://github.com/amrupapz/superset/pull/3"
     assert task["commented"] == 1
     assert orchestrator.metrics()["success_rate"] == 100.0
     assert orchestrator.metrics()["acus_consumed"] == 1.25
