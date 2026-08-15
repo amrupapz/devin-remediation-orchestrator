@@ -25,10 +25,10 @@ This service closes that loop: label an issue, get a reviewed pull request.
      └───────┬────────┘
              ▼
       Orchestrator (state machine, concurrency cap)
-             │  POST /v1/sessions  (prompt + structured_output_schema)
+             │  POST /v3/organizations/{org_id}/sessions
              ▼
         Devin session ──── opens PR on the repo
-             │  GET /v1/sessions/{id}  (status_enum, structured_output)
+             │  GET /v3/organizations/{org_id}/sessions/{id}
              ▼
    SQLite (tasks) ──► issue comment (PR + session link + verification)
              │
@@ -56,7 +56,9 @@ Put real values in `.env`:
 
 | Variable | Meaning |
 | --- | --- |
-| `DEVIN_API_KEY` | https://app.devin.ai/settings/api-keys |
+| `DEVIN_API_KEY` | service-user token (`cog_...`) for the current Devin API |
+| `DEVIN_ORG_ID` | Devin organization ID (`org-...`) used by the v3 API |
+| `DEVIN_MAX_ACU` | hard ACU limit for each launched session |
 | `GITHUB_TOKEN` | fine-grained PAT with Contents / Issues / Pull requests RW on the target repo |
 | `GITHUB_REPO` | `owner/repo` to watch |
 | `BASE_BRANCH` | branch PRs target |
@@ -64,7 +66,7 @@ Put real values in `.env`:
 | `POLL_INTERVAL` | seconds between issue/session polls |
 | `MAX_CONCURRENT` | cap on simultaneous Devin sessions |
 | `HOURS_SAVED_PER_ISSUE` | assumption used by the hours-saved metric, shown on the dashboard |
-| `WEBHOOK_SECRET` | optional; enables HMAC signature verification on the webhook |
+| `WEBHOOK_SECRET` | required for webhook delivery in live mode; enables HMAC verification |
 
 Set `DRY_RUN=false` and `docker compose up`. Labelling an issue `devin-ready` is
 the only action a human takes.
@@ -89,8 +91,8 @@ delivery or an unavailable tunnel never stalls the pipeline.
 ## Observability
 
 - Dashboard tiles: issues detected, sessions launched, in flight, PRs opened,
-  success rate, median time-to-PR, estimated engineer-hours saved (assumption
-  printed on screen).
+  success rate, median time-to-PR, ACUs consumed, and estimated engineer-hours
+  saved (assumption printed on screen).
 - A "needs a human" table lists every blocked or failed run with Devin's own
   stated reason. Failures are shown, not hidden — a session that declines to
   force an unsafe PR is a correct outcome.
@@ -106,6 +108,33 @@ delivery or an unavailable tunnel never stalls the pipeline.
   `blocked` — the agent is told not to force a PR when the request is wrong.
 - **Poller as primary trigger, webhook as accelerator.** Reconciling against
   GitHub state is idempotent; webhooks only reduce latency.
+- **Current Devin API.** Live calls use the organization-scoped v3 API and
+  service-user keys. Completion is detected from `status=running` plus
+  `status_detail=finished`, as specified by the [v3 session response contract](https://docs.devin.ai/api-reference/v3/sessions/get-organizations-session).
+  See Devin's [migration guide](https://docs.devin.ai/api-reference/getting-started/migration-guide)
+  to create the required service user.
+
+## Proven end-to-end result
+
+Two real `devin-ready` issues in the Superset fork produced two open,
+mergeable pull requests. The issue comments link each API-launched Devin session
+and record its verification commands. See [the evidence report](evidence/final-live-remediations.md).
+
+| Issue | Devin output |
+| --- | --- |
+| [#1 Remove orphaned ExampleComponent](https://github.com/amrupapz/superset/issues/1) | [PR #3](https://github.com/amrupapz/superset/pull/3) |
+| [#2 Test useIsMobile lifecycle](https://github.com/amrupapz/superset/issues/2) | [PR #4](https://github.com/amrupapz/superset/pull/4) |
+
+## Verification
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+docker build -t devin-remediation-orchestrator .
+```
+
+The same checks run in GitHub Actions. For the presentation, use the
+[five-minute Loom runbook](docs/LOOM_SCRIPT.md).
 
 ## Next steps
 
