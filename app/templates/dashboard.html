@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="5">
+  <title>Devin Remediation Orchestrator</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: ui-sans-serif, system-ui, sans-serif; background:#0d1117; color:#e6edf3; margin:0; padding:32px; }
+    h1 { font-size:20px; margin:0 0 4px; }
+    .sub { color:#8b949e; font-size:13px; margin-bottom:24px; }
+    .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:28px; }
+    .tile { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:14px 16px; }
+    .tile .n { font-size:26px; font-weight:600; }
+    .tile .l { color:#8b949e; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { text-align:left; padding:9px 10px; border-bottom:1px solid #21262d; vertical-align:top; }
+    th { color:#8b949e; font-weight:500; text-transform:uppercase; font-size:11px; letter-spacing:.04em; }
+    a { color:#58a6ff; text-decoration:none; }
+    .pill { border-radius:999px; padding:2px 9px; font-size:11px; font-weight:600; }
+    .running { background:#1f6feb33; color:#79c0ff; }
+    .done { background:#23863633; color:#7ee787; }
+    .blocked { background:#9e6a0333; color:#e3b341; }
+    .failed { background:#da363333; color:#ff7b72; }
+    .banner { background:#9e6a0322; border:1px solid #9e6a03; color:#e3b341; padding:8px 12px; border-radius:6px; margin-bottom:20px; font-size:13px; }
+    h2 { font-size:14px; color:#8b949e; margin:28px 0 10px; text-transform:uppercase; letter-spacing:.04em; }
+    .note { color:#8b949e; font-size:12px; }
+  </style>
+</head>
+<body>
+  <h1>Devin Remediation Orchestrator</h1>
+  <div class="sub">{{ metrics.repo }} &middot; trigger label <code>{{ metrics.trigger_label }}</code> &middot; auto-refresh 5s</div>
+
+  {% if dry_run %}<div class="banner">DRY_RUN is on — Devin and GitHub calls are simulated.</div>{% endif %}
+
+  <div class="tiles">
+    <div class="tile"><div class="n">{{ metrics.issues_detected }}</div><div class="l">Issues detected</div></div>
+    <div class="tile"><div class="n">{{ metrics.sessions_launched }}</div><div class="l">Sessions launched</div></div>
+    <div class="tile"><div class="n">{{ metrics.in_flight }}</div><div class="l">In flight</div></div>
+    <div class="tile"><div class="n">{{ metrics.prs_opened }}</div><div class="l">PRs opened</div></div>
+    <div class="tile"><div class="n">{{ metrics.success_rate }}%</div><div class="l">Success rate</div></div>
+    <div class="tile"><div class="n">{{ metrics.median_time_to_pr_seconds if metrics.median_time_to_pr_seconds is not none else '—' }}s</div><div class="l">Median time to PR</div></div>
+    <div class="tile"><div class="n">{{ metrics.engineer_hours_saved }}h</div><div class="l">Eng. hours saved<br><span class="note">@ {{ metrics.hours_saved_assumption }}h/issue</span></div></div>
+  </div>
+
+  <table>
+    <tr><th>Issue</th><th>Title</th><th>Status</th><th>Session</th><th>PR</th><th>Duration</th><th>Outcome</th></tr>
+    {% for t in tasks %}
+    <tr>
+      <td><a href="{{ t.issue_url }}">#{{ t.issue_number }}</a></td>
+      <td>{{ t.title }}</td>
+      <td><span class="pill {{ t.status }}">{{ t.status }}</span></td>
+      <td>{% if t.session_url %}<a href="{{ t.session_url }}">session</a>{% else %}—{% endif %}</td>
+      <td>{% if t.pr_url %}<a href="{{ t.pr_url }}">PR</a>{% else %}—{% endif %}</td>
+      <td>{% if t.finished_at and t.started_at %}{{ (t.finished_at - t.started_at) | round | int }}s{% else %}—{% endif %}</td>
+      <td>{{ t.outcome or '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="note">No issues picked up yet.</td></tr>
+    {% endfor %}
+  </table>
+
+  {% set problems = tasks | selectattr('status', 'in', ['blocked', 'failed']) | list %}
+  {% if problems %}
+  <h2>Needs a human</h2>
+  <table>
+    <tr><th>Issue</th><th>Status</th><th>Reason</th></tr>
+    {% for t in problems %}
+    <tr>
+      <td><a href="{{ t.issue_url }}">#{{ t.issue_number }}</a></td>
+      <td><span class="pill {{ t.status }}">{{ t.status }}</span></td>
+      <td>{{ t.risk_notes or t.error or t.verification or 'no detail reported' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</body>
+</html>
