@@ -1,0 +1,7 @@
+{"ts": 1786892487.726054, "event": "startup", "dry_run": true, "poll_interval": 5, "label": "devin-ready"}
+{"ts": 1786892487.7293594, "event": "session_launched", "issue": 1, "session_id": "devin-dryrun-2b99a04ba81c", "url": "https://app.devin.ai/sessions/devin-dryrun-2b99a04ba81c"}
+{"ts": 1786892487.7302773, "event": "session_launched", "issue": 2, "session_id": "devin-dryrun-610fc8d02331", "url": "https://app.devin.ai/sessions/devin-dryrun-610fc8d02331"}
+{"ts": 1786892507.7387166, "event": "session_finished", "issue": 2, "status": "done", "outcome": "fixed", "pr_url": "https://github.com/example/superset/pull/1", "session_status": "exit", "status_detail": "finished", "acus_consumed": 2.6}
+{"ts": 1786892507.7409058, "event": "issue_commented", "issue": 2}
+{"ts": 1786892507.7444048, "event": "session_finished", "issue": 1, "status": "blocked", "outcome": "blocked", "pr_url": null, "session_status": "running", "status_detail": "finished", "acus_consumed": 1.1}
+{"ts": 1786892507.7454376, "event": "issue_commented", "issue": 1}

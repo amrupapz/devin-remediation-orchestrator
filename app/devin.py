@@ -4,7 +4,13 @@ from typing import Optional
 
 import httpx
 
-from app.config import DEVIN_API_BASE, DEVIN_API_KEY, DRY_RUN
+from app.config import (
+    DEVIN_API_BASE,
+    DEVIN_API_KEY,
+    DEVIN_ORG_ID,
+    DRY_RUN,
+    MAX_ACU_PER_SESSION,
+)
 
 STRUCTURED_OUTPUT_SCHEMA = {
     "type": "object",
@@ -49,18 +55,39 @@ Requirements:
   not_applicable) with the reason instead.
 """
 
+# v3 `status` values. A session is only settled once it leaves the running set.
+RUNNING_STATES = {"new", "claimed", "running", "resuming"}
+FINISHED_DETAIL = "finished"
+ERROR_STATES = {"error"}
+
 
 class DevinClient:
-    """Minimal client for the two Devin API calls the orchestrator needs."""
+    """Client for the Devin v3 session endpoints the orchestrator needs.
 
-    def __init__(self, api_key: str = DEVIN_API_KEY, dry_run: bool = DRY_RUN):
+    Authenticates as a service user (`cog_` key) against
+    `/v3/organizations/{org_id}/sessions`.
+    """
+
+    def __init__(
+        self,
+        api_key: str = DEVIN_API_KEY,
+        org_id: str = DEVIN_ORG_ID,
+        dry_run: bool = DRY_RUN,
+        max_acu_limit: int = MAX_ACU_PER_SESSION,
+    ):
         self.api_key = api_key
+        self.org_id = org_id
         self.dry_run = dry_run
+        self.max_acu_limit = max_acu_limit
         self._fake: dict[str, dict] = {}
 
     @property
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.api_key}"}
+
+    @property
+    def _sessions_url(self) -> str:
+        return f"{DEVIN_API_BASE}/v3/organizations/{self.org_id}/sessions"
 
     @staticmethod
     def build_prompt(repo: str, number: int, title: str, body: str, base_branch: str) -> str:
@@ -79,15 +106,20 @@ class DevinClient:
             return {
                 "session_id": session_id,
                 "url": f"https://app.devin.ai/sessions/{session_id}",
+                "status": "new",
+                "acus_consumed": 0,
             }
+        if not self.org_id:
+            raise RuntimeError("DEVIN_ORG_ID is required for live Devin v3 calls")
         response = httpx.post(
-            f"{DEVIN_API_BASE}/v1/sessions",
+            self._sessions_url,
             headers=self._headers,
             json={
                 "prompt": prompt,
                 "title": title,
                 "tags": tags,
                 "idempotent": True,
+                "max_acu_limit": self.max_acu_limit,
                 "structured_output_schema": STRUCTURED_OUTPUT_SCHEMA,
             },
             timeout=60,
@@ -98,8 +130,10 @@ class DevinClient:
     def get_session(self, session_id: str) -> dict:
         if self.dry_run:
             return self._fake_progress(session_id)
+        if not self.org_id:
+            raise RuntimeError("DEVIN_ORG_ID is required for live Devin v3 calls")
         response = httpx.get(
-            f"{DEVIN_API_BASE}/v1/sessions/{session_id}",
+            f"{self._sessions_url}/{session_id}",
             headers=self._headers,
             timeout=60,
         )
@@ -107,16 +141,25 @@ class DevinClient:
         return response.json()
 
     def _fake_progress(self, session_id: str) -> dict:
-        """Canned lifecycle so the whole pipeline is runnable without credentials."""
+        """Canned v3-shaped lifecycle so the pipeline runs without credentials."""
         started = self._fake.setdefault(session_id, {"created": time.time()})["created"]
         elapsed = time.time() - started
         if elapsed < 20:
-            return {"session_id": session_id, "status_enum": "working"}
+            return {
+                "session_id": session_id,
+                "status": "running",
+                "status_detail": "working",
+                "pull_requests": [],
+                "acus_consumed": 0.4,
+            }
         blocked = int(session_id[-1], 16) % 4 == 0
         if blocked:
             return {
                 "session_id": session_id,
-                "status_enum": "finished",
+                "status": "running",
+                "status_detail": FINISHED_DETAIL,
+                "pull_requests": [],
+                "acus_consumed": 1.1,
                 "structured_output": {
                     "status": "blocked",
                     "pr_url": None,
@@ -126,21 +169,37 @@ class DevinClient:
             }
         return {
             "session_id": session_id,
-            "status_enum": "finished",
-            "pull_request": {"url": "https://github.com/example/superset/pull/1"},
+            "status": "exit",
+            "status_detail": FINISHED_DETAIL,
+            "pull_requests": [
+                {"pr_url": "https://github.com/example/superset/pull/1", "pr_state": "open"}
+            ],
+            "acus_consumed": 2.6,
             "structured_output": {
                 "status": "fixed",
                 "pr_url": "https://github.com/example/superset/pull/1",
-                "verification": "npx prettier --check <files>; npx tsc --noEmit; jest <suite> -> all passed",
+                "verification": "npx oxfmt --check <files>; pre-commit run; jest <suite> -> all passed",
                 "risk_notes": "Deletion only; confirm no downstream plugin imports the module.",
             },
         }
 
 
+def is_settled(session: dict) -> bool:
+    """True when a v3 session will do no further work on its own."""
+    status = session.get("status")
+    if status in ERROR_STATES or status in {"exit", "suspended"}:
+        return True
+    if status in RUNNING_STATES:
+        return session.get("status_detail") == FINISHED_DETAIL
+    return False
+
+
 def extract_pr_url(session: dict) -> Optional[str]:
+    """Prefer the PRs Devin actually opened; fall back to structured output."""
+    for pr in session.get("pull_requests") or []:
+        url = pr.get("pr_url") or pr.get("url")
+        if url:
+            return url
     output = session.get("structured_output") or {}
     pr_url = output.get("pr_url")
-    if pr_url:
-        return pr_url
-    pull_request = session.get("pull_request") or {}
-    return pull_request.get("url")
+    return pr_url or None

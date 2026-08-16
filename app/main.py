@@ -7,7 +7,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from app import store
-from app.config import DRY_RUN, POLL_INTERVAL, TRIGGER_LABEL, WEBHOOK_SECRET
+from app.config import (
+    DRY_RUN,
+    GITHUB_REPO,
+    POLL_INTERVAL,
+    TRIGGER_LABEL,
+    WEBHOOK_SECRET,
+)
 from app.log import event
 from app.orchestrator import Orchestrator
 
@@ -59,12 +65,16 @@ async def github_webhook(
 
     payload = await request.json()
     if x_github_event != "issues" or payload.get("action") not in {"labeled", "opened", "reopened"}:
-        return {"ignored": True}
+        return {"ignored": True, "reason": "event"}
+
+    repo = (payload.get("repository") or {}).get("full_name")
+    if repo and repo != GITHUB_REPO:
+        return {"ignored": True, "reason": "repository"}
 
     issue = payload.get("issue", {})
     labels = {label["name"] for label in issue.get("labels", [])}
     if TRIGGER_LABEL not in labels:
-        return {"ignored": True}
+        return {"ignored": True, "reason": "label"}
 
     event("webhook_received", issue=issue.get("number"), action=payload.get("action"))
     return {"launched": orchestrator.handle_issue(issue)}

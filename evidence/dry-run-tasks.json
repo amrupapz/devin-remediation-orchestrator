@@ -1,0 +1,40 @@
+[
+    {
+        "issue_number": 2,
+        "title": "Add direct tests for the useIsMobile media-query lifecycle",
+        "issue_url": "https://github.com/amrupapz/superset/issues/2",
+        "session_id": "devin-dryrun-610fc8d02331",
+        "session_url": "https://app.devin.ai/sessions/devin-dryrun-610fc8d02331",
+        "status": "done",
+        "pr_url": "https://github.com/example/superset/pull/1",
+        "outcome": "fixed",
+        "verification": "npx oxfmt --check <files>; pre-commit run; jest <suite> -> all passed",
+        "risk_notes": "Deletion only; confirm no downstream plugin imports the module.",
+        "error": null,
+        "session_status": "exit",
+        "session_status_detail": "finished",
+        "acus_consumed": 2.6,
+        "commented": 1,
+        "started_at": 1786892487.7298841,
+        "finished_at": 1786892507.7366962
+    },
+    {
+        "issue_number": 1,
+        "title": "Remove the orphaned dashboard ExampleComponent POC",
+        "issue_url": "https://github.com/amrupapz/superset/issues/1",
+        "session_id": "devin-dryrun-2b99a04ba81c",
+        "session_url": "https://app.devin.ai/sessions/devin-dryrun-2b99a04ba81c",
+        "status": "blocked",
+        "pr_url": null,
+        "outcome": "blocked",
+        "verification": "Inspected the referenced module; no lint run.",
+        "risk_notes": "Acceptance criteria conflict with live usage; needs a human decision.",
+        "error": null,
+        "session_status": "running",
+        "session_status_detail": "finished",
+        "acus_consumed": 1.1,
+        "commented": 1,
+        "started_at": 1786892487.728571,
+        "finished_at": 1786892507.742606
+    }
+]
