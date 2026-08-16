@@ -1,9 +1,9 @@
-"""Mock end-to-end: labelled issues -> sessions -> PR/blocked -> metrics."""
+"""Mock end-to-end: labelled issues -> sessions -> PRs -> metrics."""
 
 from app import store
 from app.devin import DevinClient
 from app.github import GitHubClient
-from app.orchestrator import BLOCKED, DONE, RUNNING, Orchestrator
+from app.orchestrator import DONE, RUNNING, Orchestrator
 
 
 def test_dry_run_flow_from_issues_to_metrics():
@@ -27,7 +27,7 @@ def test_dry_run_flow_from_issues_to_metrics():
     orch.poll_sessions()
 
     tasks = store.all_tasks()
-    assert {task["status"] for task in tasks} <= {DONE, BLOCKED}
+    assert {task["status"] for task in tasks} == {DONE}
     for task in tasks:
         assert task["session_url"].startswith("https://app.devin.ai/sessions/")
         assert task["acus_consumed"] > 0
@@ -37,8 +37,9 @@ def test_dry_run_flow_from_issues_to_metrics():
 
     metrics = orch.metrics()
     assert metrics["in_flight"] == 0
-    assert metrics["prs_opened"] == len([t for t in tasks if t["status"] == DONE])
-    assert metrics["blocked"] == len([t for t in tasks if t["status"] == BLOCKED])
+    assert metrics["prs_opened"] == 2
+    assert metrics["blocked"] == 0
+    assert metrics["success_rate"] == 100.0
     assert metrics["acus_consumed"] > 0
     assert metrics["engineer_hours_saved"] == round(
         metrics["prs_opened"] * metrics["hours_saved_assumption"], 1

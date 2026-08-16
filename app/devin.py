@@ -8,6 +8,7 @@ from app.config import (
     DEVIN_API_BASE,
     DEVIN_API_KEY,
     DEVIN_API_VERSION,
+    DEVIN_DRY_RUN_OUTCOME,
     DEVIN_DRY_RUN_SECONDS,
     DEVIN_ORG_ID,
     DRY_RUN,
@@ -96,6 +97,7 @@ class DevinClient:
         dry_run: bool = DRY_RUN,
         max_acu_limit: int = MAX_ACU_PER_SESSION,
         dry_run_seconds: float = DEVIN_DRY_RUN_SECONDS,
+        dry_run_outcome: str = DEVIN_DRY_RUN_OUTCOME,
         http_client: Any = httpx,
         api_version: str = DEVIN_API_VERSION,
     ):
@@ -106,11 +108,14 @@ class DevinClient:
         self.api_version = self._resolve_version(api_version, api_key)
         self.max_acu_limit = max_acu_limit
         self.dry_run_seconds = dry_run_seconds
+        self.dry_run_outcome = dry_run_outcome.strip().lower()
         self.http = http_client
         self._fake: dict[str, dict] = {}
 
         if not dry_run and not api_key:
             raise ValueError("DEVIN_API_KEY and DEVIN_ORG_ID are required when DRY_RUN=false")
+        if self.dry_run_outcome not in {"fixed", "blocked"}:
+            raise ValueError("DEVIN_DRY_RUN_OUTCOME must be 'fixed' or 'blocked'")
 
     @staticmethod
     def _resolve_version(requested: str, api_key: str) -> str:
@@ -222,8 +227,7 @@ class DevinClient:
                 "pull_requests": [],
                 "acus_consumed": 0.4,
             }
-        blocked = int(session_id[-1], 16) % 4 == 0
-        if blocked:
+        if self.dry_run_outcome == "blocked":
             return {
                 "session_id": session_id,
                 "status": "running",

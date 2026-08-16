@@ -79,6 +79,8 @@ replaced with canned responses that walk through the real state machine, so the
 poller, the store, the metrics and the dashboard are all genuinely exercised.
 The two seeded Superset rows link to the recorded live Devin sessions and PRs;
 the dashboard labels these as evidence rather than newly created dry-run resources.
+Dry-run defaults to a deterministic successful outcome for repeatable demos. Set
+`DEVIN_DRY_RUN_OUTCOME=blocked` to exercise the needs-human path deliberately.
 
 ```bash
 # or without compose
@@ -243,9 +245,9 @@ PRs per week rises, the system is compounding.
   and label, but not replay-protected beyond the per-issue deduplication.
 - `HOURS_SAVED_PER_ISSUE` is an assumption, not a measurement; the dashboard
   prints it next to the derived number for that reason.
-- The dry-run Devin client returns a placeholder PR URL
-  (`https://github.com/example/superset/pull/1`) — dry-run evidence is labelled as
-  such and must not be read as a real pull request.
+- Dry-run execution is simulated, but its two seeded rows deliberately link to
+  the recorded live sessions and pull requests listed above. The dashboard labels
+  those links as recorded evidence rather than newly created resources.
 
 ## Next steps
 
