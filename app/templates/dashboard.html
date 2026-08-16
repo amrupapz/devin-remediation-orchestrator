@@ -31,7 +31,7 @@
   <h1>Devin Remediation Orchestrator</h1>
   <div class="sub">{{ metrics.repo }} &middot; trigger label <code>{{ metrics.trigger_label }}</code> &middot; auto-refresh 5s</div>
 
-  {% if dry_run %}<div class="banner">DRY_RUN is on — Devin and GitHub calls are simulated.</div>{% endif %}
+  {% if dry_run %}<div class="banner">DRY_RUN is on — execution is simulated; issue, recorded-session, and live-PR links point to verified artifacts from the completed API run.</div>{% endif %}
 
   <div class="tiles">
     <div class="tile"><div class="n">{{ metrics.issues_detected }}</div><div class="l">Issues detected</div></div>
@@ -42,6 +42,7 @@
     <div class="tile"><div class="n">{{ metrics.median_time_to_pr_seconds if metrics.median_time_to_pr_seconds is not none else '—' }}s</div><div class="l">Median time to PR</div></div>
     <div class="tile"><div class="n">{{ metrics.acus_consumed }}</div><div class="l">ACUs consumed</div></div>
     <div class="tile"><div class="n">{{ metrics.engineer_hours_saved }}h</div><div class="l">Eng. hours saved<br><span class="note">@ {{ metrics.hours_saved_assumption }}h/issue</span></div></div>
+    <div class="tile"><div class="n">{{ metrics.acus_consumed }}</div><div class="l">ACUs consumed</div></div>
   </div>
 
   <table>
@@ -51,8 +52,8 @@
       <td><a href="{{ t.issue_url }}">#{{ t.issue_number }}</a></td>
       <td>{{ t.title }}</td>
       <td><span class="pill {{ t.status }}">{{ t.status }}</span></td>
-      <td>{% if t.session_url %}<a href="{{ t.session_url }}">session</a>{% else %}—{% endif %}</td>
-      <td>{% if t.pr_url %}<a href="{{ t.pr_url }}">PR</a>{% else %}—{% endif %}</td>
+      <td>{% if t.session_url %}<a href="{{ t.session_url }}">{{ 'recorded session' if dry_run else 'session' }}</a>{% else %}—{% endif %}</td>
+      <td>{% if t.pr_url %}<a href="{{ t.pr_url }}">{{ 'live PR' if dry_run else 'PR' }}</a>{% else %}—{% endif %}</td>
       <td>{% if t.finished_at and t.started_at %}{{ (t.finished_at - t.started_at) | round | int }}s{% else %}—{% endif %}</td>
       <td>{{ t.outcome or '—' }}</td>
     </tr>

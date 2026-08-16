@@ -11,7 +11,7 @@ from app.config import (
     POLL_INTERVAL,
     TRIGGER_LABEL,
 )
-from app.devin import DevinClient, extract_pr_url, is_settled
+from app.devin import DevinClient, extract_pr_url, is_settled, session_terminal_state
 from app.github import GitHubClient
 from app.log import event
 
@@ -23,9 +23,15 @@ TERMINAL = {DONE, BLOCKED, FAILED}
 
 
 class Orchestrator:
-    def __init__(self, devin: DevinClient | None = None, github: GitHubClient | None = None):
+    def __init__(
+        self,
+        devin: DevinClient | None = None,
+        github: GitHubClient | None = None,
+        task_store=store,
+    ):
         self.devin = devin or DevinClient()
         self.github = github or GitHubClient()
+        self.store = task_store
         self._lock = threading.Lock()
         self._stop = threading.Event()
 
@@ -42,12 +48,12 @@ class Orchestrator:
     def handle_issue(self, issue: dict) -> bool:
         number = issue["number"]
         with self._lock:
-            if store.get(number):
+            if self.store.get(number):
                 return False
-            if store.count_by_status(RUNNING) >= MAX_CONCURRENT:
+            if self.store.count_by_status(RUNNING) >= MAX_CONCURRENT:
                 event("launch_deferred", issue=number, reason="concurrency_cap")
                 return False
-            store.insert(number, issue["title"], issue.get("html_url", ""), RUNNING)
+            self.store.insert(number, issue["title"], issue.get("html_url", ""), RUNNING)
 
         prompt = self.devin.build_prompt(
             repo=GITHUB_REPO,
@@ -61,13 +67,14 @@ class Orchestrator:
                 prompt=prompt,
                 title=f"Remediate {GITHUB_REPO}#{number}",
                 tags=["remediation-orchestrator", f"issue-{number}"],
+                repo=GITHUB_REPO,
             )
         except Exception as exc:
-            store.update(number, status=FAILED, error=str(exc), finished_at=time.time())
+            self.store.update(number, status=FAILED, error=str(exc), finished_at=time.time())
             event("launch_failed", issue=number, error=str(exc))
             return False
 
-        store.update(
+        self.store.update(
             number,
             session_id=session.get("session_id"),
             session_url=session.get("url"),
@@ -84,7 +91,7 @@ class Orchestrator:
     # --- session tracking ---------------------------------------------
 
     def poll_sessions(self) -> None:
-        for task in store.all_tasks():
+        for task in self.store.all_tasks():
             if task["status"] != RUNNING or not task["session_id"]:
                 continue
             try:
@@ -98,7 +105,7 @@ class Orchestrator:
         number = task["issue_number"]
         acus = session.get("acus_consumed")
         if acus is not None:
-            store.update(number, acus_consumed=acus)
+            self.store.update(number, acus_consumed=acus)
         if not is_settled(session):
             return
 
@@ -106,7 +113,7 @@ class Orchestrator:
         detail = session.get("status_detail")
         output = session.get("structured_output") or {}
         pr_url = extract_pr_url(session)
-        outcome = output.get("status") or "unknown"
+        outcome = output.get("status") or session_terminal_state(session)
 
         if state == "error":
             status, outcome = FAILED, outcome if output else "error"
@@ -120,7 +127,7 @@ class Orchestrator:
             # even if the agent claimed it fixed the issue.
             status = BLOCKED
 
-        store.update(
+        self.store.update(
             number,
             status=status,
             outcome=outcome,
@@ -129,6 +136,7 @@ class Orchestrator:
             risk_notes=output.get("risk_notes"),
             session_status=state,
             session_status_detail=detail,
+            error=detail if status == FAILED else None,
             finished_at=time.time(),
         )
         event(
@@ -144,7 +152,7 @@ class Orchestrator:
         self._comment(number, status, pr_url, task["session_url"], output)
 
     def _comment(self, number: int, status: str, pr_url, session_url, output: dict) -> None:
-        task = store.get(number) or {}
+        task = self.store.get(number) or {}
         if task.get("commented"):
             return
         if status == DONE:
@@ -162,7 +170,7 @@ class Orchestrator:
             )
         try:
             self.github.comment(number, body)
-            store.update(number, commented=1)
+            self.store.update(number, commented=1)
             event("issue_commented", issue=number)
         except Exception as exc:
             event("comment_failed", issue=number, error=str(exc))
@@ -170,7 +178,7 @@ class Orchestrator:
     # --- metrics -------------------------------------------------------
 
     def metrics(self) -> dict:
-        tasks = store.all_tasks()
+        tasks = self.store.all_tasks()
         finished = [t for t in tasks if t["status"] in TERMINAL]
         with_pr = [t for t in tasks if t["pr_url"]]
         durations = [

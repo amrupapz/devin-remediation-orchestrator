@@ -57,6 +57,25 @@ def test_live_calls_require_an_organization_id():
         client(org_id="").get_session("devin-abc")
 
 
+def test_personal_keys_fall_back_to_the_v1_endpoint(monkeypatch):
+    recorder = Recorder()
+    monkeypatch.setattr(httpx, "post", recorder)
+
+    personal = client(api_key="apk_personal_key")
+    assert personal.api_version == "v1"
+    personal.create_session(prompt="p", title="t", tags=["issue-1"])
+
+    call = recorder.calls[0]
+    assert call["url"] == "https://api.devin.ai/v1/sessions"
+    # v3-only flag must not leak into a v1 payload.
+    assert "structured_output_required" not in call["json"]
+
+
+def test_api_version_can_be_pinned():
+    assert client(api_version="v1").api_version == "v1"
+    assert client(api_key="apk_personal_key", api_version="v3").api_version == "v3"
+
+
 def test_dry_run_never_calls_the_api(monkeypatch):
     def explode(*args, **kwargs):  # pragma: no cover - must not be reached
         raise AssertionError("dry run must not touch the network")

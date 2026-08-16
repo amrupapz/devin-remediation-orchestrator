@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -17,15 +18,33 @@ from app.config import (
 from app.log import event
 from app.orchestrator import Orchestrator
 
-app = FastAPI(title="Devin Remediation Orchestrator")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 orchestrator = Orchestrator()
 
 
-@app.on_event("startup")
-def _startup() -> None:
+def verify_webhook_signature(raw: bytes, signature: str, secret: str) -> bool:
+    if not secret:
+        return DRY_RUN
+    expected = "sha256=" + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def actionable_issue(payload: dict, github_event: str, trigger_label: str) -> bool:
+    if github_event != "issues" or payload.get("action") not in {"labeled", "opened", "reopened"}:
+        return False
+    labels = {label.get("name") for label in payload.get("issue", {}).get("labels", [])}
+    return trigger_label in labels
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     event("startup", dry_run=DRY_RUN, poll_interval=POLL_INTERVAL, label=TRIGGER_LABEL)
     orchestrator.start()
+    yield
+    orchestrator.stop()
+
+
+app = FastAPI(title="Devin Remediation Orchestrator", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -46,7 +65,9 @@ def tasks() -> JSONResponse:
 @app.post("/sync")
 def sync() -> dict:
     """Manual trigger, mostly for demos: same code path as the poller."""
-    return {"launched": orchestrator.sync_issues()}
+    launched = orchestrator.sync_issues()
+    orchestrator.poll_sessions()
+    return {"launched": launched, "metrics": orchestrator.metrics()}
 
 
 @app.post("/webhook/github")
@@ -56,12 +77,9 @@ async def github_webhook(
     x_hub_signature_256: str = Header(default=""),
 ) -> dict:
     raw = await request.body()
-    if WEBHOOK_SECRET:
-        expected = "sha256=" + hmac.new(
-            WEBHOOK_SECRET.encode(), raw, hashlib.sha256
-        ).hexdigest()
-        if not hmac.compare_digest(expected, x_hub_signature_256):
-            raise HTTPException(status_code=401, detail="bad signature")
+    if not verify_webhook_signature(raw, x_hub_signature_256, WEBHOOK_SECRET):
+        detail = "WEBHOOK_SECRET is required when DRY_RUN=false" if not WEBHOOK_SECRET else "bad signature"
+        raise HTTPException(status_code=401, detail=detail)
 
     payload = await request.json()
     if x_github_event != "issues" or payload.get("action") not in {"labeled", "opened", "reopened"}:
@@ -72,8 +90,7 @@ async def github_webhook(
         return {"ignored": True, "reason": "repository"}
 
     issue = payload.get("issue", {})
-    labels = {label["name"] for label in issue.get("labels", [])}
-    if TRIGGER_LABEL not in labels:
+    if not actionable_issue(payload, x_github_event, TRIGGER_LABEL):
         return {"ignored": True, "reason": "label"}
 
     event("webhook_received", issue=issue.get("number"), action=payload.get("action"))

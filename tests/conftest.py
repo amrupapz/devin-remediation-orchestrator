@@ -32,11 +32,13 @@ class FakeDevin:
 
     build_prompt = staticmethod(lambda **kwargs: "prompt")
 
-    def create_session(self, prompt, title, tags):
+    def create_session(self, prompt, title, tags, repo=None):
         if self.create_error:
             raise self.create_error
         session_id = f"devin-test-{len(self.created) + 1}"
-        self.created.append({"prompt": prompt, "title": title, "tags": tags})
+        self.created.append(
+            {"prompt": prompt, "title": title, "tags": tags, "repo": repo}
+        )
         return {
             "session_id": session_id,
             "url": f"https://app.devin.ai/sessions/{session_id}",

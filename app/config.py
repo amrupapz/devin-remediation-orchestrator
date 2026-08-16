@@ -10,7 +10,11 @@ def _bool(name: str, default: str = "false") -> bool:
 DEVIN_API_KEY = os.getenv("DEVIN_API_KEY", "")
 DEVIN_ORG_ID = os.getenv("DEVIN_ORG_ID", "")
 DEVIN_API_BASE = os.getenv("DEVIN_API_BASE", "https://api.devin.ai")
+# `auto` picks v3 for service-user keys and v1 for personal (`apk_`) keys,
+# which the v3 organization endpoints reject. Force one with `v1` / `v3`.
+DEVIN_API_VERSION = os.getenv("DEVIN_API_VERSION", "auto")
 MAX_ACU_PER_SESSION = int(os.getenv("MAX_ACU_PER_SESSION", "10"))
+DEVIN_DRY_RUN_SECONDS = float(os.getenv("DEVIN_DRY_RUN_SECONDS", "20"))
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_API_BASE = os.getenv("GITHUB_API_BASE", "https://api.github.com")

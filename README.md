@@ -77,6 +77,8 @@ docker compose up --build
 Open http://localhost:8000/dashboard. In dry-run the Devin and GitHub calls are
 replaced with canned responses that walk through the real state machine, so the
 poller, the store, the metrics and the dashboard are all genuinely exercised.
+The two seeded Superset rows link to the recorded live Devin sessions and PRs;
+the dashboard labels these as evidence rather than newly created dry-run resources.
 
 ```bash
 # or without compose
@@ -102,14 +104,20 @@ PR, a finished session without a PR, errored/suspended sessions, and a mock
 end-to-end issue → session → PR → metrics cycle. CI (`.github/workflows/ci.yml`)
 runs the suite and builds the Docker image on every push and pull request.
 
-## Live run (Devin v3)
+## Live run
+
+Sessions are created on `/v3/organizations/{org_id}/sessions` with a
+service-user key. Personal keys (prefix `apk_`) are rejected by the v3
+organization endpoints, so `DEVIN_API_VERSION=auto` routes them to `/v1/sessions`
+instead; both shapes are parsed by the same state machine.
 
 Put real values in `.env`:
 
 | Variable | Meaning |
 | --- | --- |
-| `DEVIN_API_KEY` | **service-user** API key (prefix `cog_`); v3 organization endpoints reject personal keys |
-| `DEVIN_ORG_ID` | organization the sessions belong to (prefix `org-`) |
+| `DEVIN_API_KEY` | **service-user** API key (prefix `cog_`) for v3; a personal `apk_` key falls back to v1 |
+| `DEVIN_ORG_ID` | organization the sessions belong to (prefix `org-`), required for v3 |
+| `DEVIN_API_VERSION` | `auto` (default), or pin `v3` / `v1` |
 | `MAX_ACU_PER_SESSION` | hard ACU ceiling sent as `max_acu_limit` on every session |
 | `GITHUB_TOKEN` | fine-grained PAT with Contents / Issues / Pull requests RW on the target repo |
 | `GITHUB_REPO` | `owner/repo` to watch |
@@ -118,7 +126,7 @@ Put real values in `.env`:
 | `POLL_INTERVAL` | seconds between issue/session polls |
 | `MAX_CONCURRENT` | cap on simultaneous Devin sessions |
 | `HOURS_SAVED_PER_ISSUE` | assumption used by the hours-saved metric, shown on the dashboard |
-| `WEBHOOK_SECRET` | optional; enables HMAC signature verification on the webhook |
+| `WEBHOOK_SECRET` | required for webhook delivery in live mode; enables HMAC verification |
 
 Set `DRY_RUN=false` and `docker compose up`. Labelling an issue `devin-ready` is
 the only action a human takes. Credentials are read from the environment only —
@@ -144,8 +152,8 @@ delivery or an unavailable tunnel never stalls the pipeline.
 ## Observability
 
 - Dashboard tiles: issues detected, sessions launched, in flight, PRs opened,
-  success rate, median time-to-PR, estimated engineer-hours saved (assumption
-  printed on screen).
+  success rate, median time-to-PR, ACUs consumed, and estimated engineer-hours
+  saved (assumption printed on screen).
 - A "needs a human" table lists every blocked or failed run with Devin's own
   stated reason. Failures are shown, not hidden — a session that declines to
   force an unsafe PR is a correct outcome.
@@ -161,6 +169,34 @@ delivery or an unavailable tunnel never stalls the pipeline.
   `blocked` — the agent is told not to force a PR when the request is wrong.
 - **Poller as primary trigger, webhook as accelerator.** Reconciling against
   GitHub state is idempotent; webhooks only reduce latency.
+- **Current Devin API.** Live calls prefer the organization-scoped v3 API and
+  service-user keys, falling back to v1 for personal keys. Completion is detected
+  from `status=running` plus `status_detail=finished` (v3) or a terminal
+  `status_enum` (v1), as specified by the [v3 session response contract](https://docs.devin.ai/api-reference/v3/sessions/get-organizations-session).
+  See Devin's [migration guide](https://docs.devin.ai/api-reference/getting-started/migration-guide)
+  to create the required service user.
+
+## Proven end-to-end result
+
+Two real `devin-ready` issues in the Superset fork produced two open,
+mergeable pull requests. The issue comments link each API-launched Devin session
+and record its verification commands. See [the evidence report](evidence/final-live-remediations.md).
+
+| Issue | Devin output |
+| --- | --- |
+| [#1 Remove orphaned ExampleComponent](https://github.com/amrupapz/superset/issues/1) | [PR #3](https://github.com/amrupapz/superset/pull/3) |
+| [#2 Test useIsMobile lifecycle](https://github.com/amrupapz/superset/issues/2) | [PR #4](https://github.com/amrupapz/superset/pull/4) |
+
+## Verification
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+docker build -t devin-remediation-orchestrator .
+```
+
+The same checks run in GitHub Actions. For the presentation, use the
+[five-minute Loom runbook](docs/LOOM_SCRIPT.md).
 
 ## What / How / Why / When
 
@@ -196,11 +232,11 @@ PRs per week rises, the system is compounding.
 - Apache Superset's GitHub Actions workflows are not enabled on the fork, so the
   remediation PRs (#3, #4) have **zero** CI checks. Verification was run locally
   inside the Devin sessions and pasted into the PR bodies; no green CI is claimed.
-- The live v3 credentials available in this environment returned HTTP 403 against
-  `/v3/organizations/{org_id}/sessions`, so the two live sessions in `evidence/`
-  were created through the earlier v1 integration. The v3 client is covered by
-  request-shape tests and the dry-run path, but has not been exercised against a
-  live v3-authorized service-user key.
+- The only Devin credential available in this environment is a personal `apk_`
+  key, which returns HTTP 403 against `/v3/organizations/{org_id}/sessions`. Every
+  live session in `evidence/` therefore ran over the v1 fallback. The v3 request
+  and response handling is covered by request-shape tests and the dry-run path,
+  but has not been exercised against a v3-authorized service-user key.
 - SQLite plus in-process threads: single instance only. Horizontal scaling needs
   Postgres and an external queue.
 - Webhook deliveries are authenticated and filtered by repository, event, action
