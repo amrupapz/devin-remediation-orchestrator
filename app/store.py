@@ -19,31 +19,71 @@ CREATE TABLE IF NOT EXISTS tasks (
   verification TEXT,
   risk_notes TEXT,
   error TEXT,
+  session_status TEXT,
+  session_status_detail TEXT,
+  acus_consumed REAL,
   commented INTEGER DEFAULT 0,
   started_at REAL,
-  finished_at REAL,
-  acus_consumed REAL
+  finished_at REAL
 );
 """
+
+# Columns `update()` may write; keeps interpolated names off any input path.
+UPDATABLE_COLUMNS = {
+    "title",
+    "issue_url",
+    "session_id",
+    "session_url",
+    "status",
+    "pr_url",
+    "outcome",
+    "verification",
+    "risk_notes",
+    "error",
+    "session_status",
+    "session_status_detail",
+    "acus_consumed",
+    "commented",
+    "started_at",
+    "finished_at",
+}
 
 _lock = threading.Lock()
 
 
-def _connect() -> sqlite3.Connection:
-    directory = os.path.dirname(DB_PATH)
+def _connect(path: str) -> sqlite3.Connection:
+    directory = os.path.dirname(path)
     if directory:
         os.makedirs(directory, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA)
+    _add_missing_columns(conn)
+    conn.commit()
     return conn
 
 
-_conn = _connect()
-_conn.executescript(SCHEMA)
-_columns = {row[1] for row in _conn.execute("PRAGMA table_info(tasks)")}
-if "acus_consumed" not in _columns:
-    _conn.execute("ALTER TABLE tasks ADD COLUMN acus_consumed REAL")
-_conn.commit()
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    """Bring a database created by an older build up to the current schema."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+    for column, ddl in (
+        ("session_status", "TEXT"),
+        ("session_status_detail", "TEXT"),
+        ("acus_consumed", "REAL"),
+    ):
+        if column not in existing:
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} {ddl}")
+
+
+_conn = _connect(DB_PATH)
+
+
+def use_database(path: str) -> None:
+    """Point the store at another database file (used by the tests)."""
+    global _conn
+    with _lock:
+        _conn.close()
+        _conn = _connect(path)
 
 
 def get(issue_number: int) -> Optional[dict]:
@@ -83,6 +123,9 @@ def insert(issue_number: int, title: str, issue_url: str, status: str) -> None:
 def update(issue_number: int, **fields: Any) -> None:
     if not fields:
         return
+    unknown = set(fields) - UPDATABLE_COLUMNS
+    if unknown:
+        raise ValueError(f"unknown task columns: {sorted(unknown)}")
     assignments = ", ".join(f"{key} = ?" for key in fields)
     values = [
         json.dumps(v) if isinstance(v, (dict, list)) else v for v in fields.values()

@@ -1,0 +1,15 @@
+{
+    "repo": "amrupapz/superset",
+    "trigger_label": "devin-ready",
+    "issues_detected": 2,
+    "sessions_launched": 2,
+    "in_flight": 0,
+    "prs_opened": 1,
+    "blocked": 1,
+    "failed": 0,
+    "success_rate": 50.0,
+    "median_time_to_pr_seconds": 20,
+    "acus_consumed": 3.7,
+    "engineer_hours_saved": 2.0,
+    "hours_saved_assumption": 2.0
+}

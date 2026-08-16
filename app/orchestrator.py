@@ -11,7 +11,7 @@ from app.config import (
     POLL_INTERVAL,
     TRIGGER_LABEL,
 )
-from app.devin import DevinClient, extract_pr_url, session_is_terminal, session_terminal_state
+from app.devin import DevinClient, extract_pr_url, is_settled, session_terminal_state
 from app.github import GitHubClient
 from app.log import event
 
@@ -103,16 +103,29 @@ class Orchestrator:
 
     def _apply_session(self, task: dict, session: dict) -> None:
         number = task["issue_number"]
-        if not session_is_terminal(session):
+        acus = session.get("acus_consumed")
+        if acus is not None:
+            self.store.update(number, acus_consumed=acus)
+        if not is_settled(session):
             return
 
+        state = session.get("status")
+        detail = session.get("status_detail")
         output = session.get("structured_output") or {}
-        terminal_state = session_terminal_state(session)
-        outcome = output.get("status") or terminal_state
         pr_url = extract_pr_url(session)
-        status = DONE if outcome == "fixed" and pr_url else BLOCKED
-        if terminal_state == "failed":
-            status = FAILED
+        outcome = output.get("status") or session_terminal_state(session)
+
+        if state == "error":
+            status, outcome = FAILED, outcome if output else "error"
+        elif state == "suspended" and detail != "finished":
+            # Ran out of ACUs/quota or hit an error before reporting.
+            status, outcome = FAILED, outcome if output else (detail or "suspended")
+        elif outcome == "fixed" and pr_url:
+            status = DONE
+        else:
+            # A session that ends without a pull request is never a success,
+            # even if the agent claimed it fixed the issue.
+            status = BLOCKED
 
         self.store.update(
             number,
@@ -121,11 +134,21 @@ class Orchestrator:
             pr_url=pr_url,
             verification=output.get("verification"),
             risk_notes=output.get("risk_notes"),
-            error=session.get("status_detail") if status == FAILED else None,
-            acus_consumed=session.get("acus_consumed"),
+            session_status=state,
+            session_status_detail=detail,
+            error=detail if status == FAILED else None,
             finished_at=time.time(),
         )
-        event("session_finished", issue=number, status=status, outcome=outcome, pr_url=pr_url)
+        event(
+            "session_finished",
+            issue=number,
+            status=status,
+            outcome=outcome,
+            pr_url=pr_url,
+            session_status=state,
+            status_detail=detail,
+            acus_consumed=acus,
+        )
         self._comment(number, status, pr_url, task["session_url"], output)
 
     def _comment(self, number: int, status: str, pr_url, session_url, output: dict) -> None:
@@ -163,6 +186,7 @@ class Orchestrator:
             for t in finished
             if t["finished_at"] and t["started_at"]
         ]
+        acus = [t["acus_consumed"] for t in tasks if t["acus_consumed"]]
         return {
             "repo": GITHUB_REPO,
             "trigger_label": TRIGGER_LABEL,
@@ -174,9 +198,9 @@ class Orchestrator:
             "failed": len([t for t in tasks if t["status"] == FAILED]),
             "success_rate": round(100 * len(with_pr) / len(finished), 1) if finished else 0.0,
             "median_time_to_pr_seconds": round(median(durations)) if durations else None,
+            "acus_consumed": round(sum(acus), 2),
             "engineer_hours_saved": round(len(with_pr) * HOURS_SAVED_PER_ISSUE, 1),
             "hours_saved_assumption": HOURS_SAVED_PER_ISSUE,
-            "acus_consumed": round(sum(t.get("acus_consumed") or 0 for t in tasks), 2),
         }
 
     # --- background loops ------------------------------------------------
