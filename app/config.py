@@ -15,6 +15,7 @@ DEVIN_API_BASE = os.getenv("DEVIN_API_BASE", "https://api.devin.ai")
 DEVIN_API_VERSION = os.getenv("DEVIN_API_VERSION", "auto")
 MAX_ACU_PER_SESSION = int(os.getenv("MAX_ACU_PER_SESSION", "10"))
 DEVIN_DRY_RUN_SECONDS = float(os.getenv("DEVIN_DRY_RUN_SECONDS", "20"))
+DEVIN_DRY_RUN_OUTCOME = os.getenv("DEVIN_DRY_RUN_OUTCOME", "fixed").strip().lower()
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_API_BASE = os.getenv("GITHUB_API_BASE", "https://api.github.com")

@@ -90,6 +90,21 @@ def test_dry_run_never_calls_the_api(monkeypatch):
     assert mock_client.get_session(session["session_id"])["status_detail"] == "working"
 
 
+def test_dry_run_outcome_is_explicit_and_repeatable():
+    fixed = DevinClient(dry_run=True, dry_run_seconds=0, dry_run_outcome="fixed")
+    fixed_outcomes = []
+    for _ in range(16):
+        session = fixed.create_session("p", "t", ["issue-1"], "amrupapz/superset")
+        fixed_outcomes.append(fixed.get_session(session["session_id"])["structured_output"]["status"])
+    assert fixed_outcomes == ["fixed"] * 16
+
+    blocked = DevinClient(dry_run=True, dry_run_seconds=0, dry_run_outcome="blocked")
+    session = blocked.create_session("p", "t", ["issue-1"], "amrupapz/superset")
+    result = blocked.get_session(session["session_id"])
+    assert result["structured_output"]["status"] == "blocked"
+    assert result["pull_requests"] == []
+
+
 def test_prompt_pins_branch_base_and_issue_reference():
     prompt = DevinClient.build_prompt(
         repo="amrupapz/superset",
